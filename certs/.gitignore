@@ -1,0 +1,14 @@
+# Ignore all certificate and key files
+*.pem
+*.key
+*.cer
+*.pfx
+*.p12
+*.crt
+
+# Ignore configuration file (contains sensitive IDs)
+azure-config.txt
+
+# But track the .gitignore itself
+!.gitignore
+

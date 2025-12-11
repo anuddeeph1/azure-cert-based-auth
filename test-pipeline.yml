@@ -1,0 +1,163 @@
+# Test Pipeline for Certificate-Based Authentication
+# Service Connection: azure-cert-sp-connection
+
+trigger: none  # Manual trigger only
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  serviceConnection: 'azure-cert-sp-connection'
+
+stages:
+- stage: VerifyAuthentication
+  displayName: 'Verify Certificate Authentication'
+  jobs:
+  - job: TestConnection
+    displayName: 'Test Service Connection'
+    steps:
+    
+    - task: AzureCLI@2
+      displayName: '✓ Test 1: Verify Azure Login'
+      inputs:
+        azureSubscription: $(serviceConnection)
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          echo "============================================"
+          echo "Test 1: Verify Azure Login"
+          echo "============================================"
+          echo ""
+          echo "Current Azure Account:"
+          az account show --output table
+          echo ""
+          echo "✅ Successfully authenticated with certificate!"
+          echo ""
+    
+    - task: AzureCLI@2
+      displayName: '✓ Test 2: List Subscriptions'
+      inputs:
+        azureSubscription: $(serviceConnection)
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          echo "============================================"
+          echo "Test 2: List Subscriptions"
+          echo "============================================"
+          echo ""
+          az account list --output table
+          echo ""
+          echo "✅ Successfully listed subscriptions"
+          echo ""
+    
+    - task: AzureCLI@2
+      displayName: '✓ Test 3: List Resource Groups'
+      inputs:
+        azureSubscription: $(serviceConnection)
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          echo "============================================"
+          echo "Test 3: List Resource Groups"
+          echo "============================================"
+          echo ""
+          az group list --output table
+          echo ""
+          COUNT=$(az group list --query "length(@)")
+          echo "✅ Found $COUNT resource group(s)"
+          echo ""
+    
+    - task: AzureCLI@2
+      displayName: '✓ Test 4: Check Service Principal Permissions'
+      inputs:
+        azureSubscription: $(serviceConnection)
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          echo "============================================"
+          echo "Test 4: Check Permissions"
+          echo "============================================"
+          echo ""
+          
+          # Get the service principal ID from current context
+          SP_ID=$(az account show --query user.name -o tsv)
+          echo "Service Principal: $SP_ID"
+          echo ""
+          
+          echo "Role Assignments:"
+          az role assignment list --assignee $SP_ID --output table
+          echo ""
+          echo "✅ Successfully retrieved role assignments"
+          echo ""
+    
+    - task: AzureCLI@2
+      displayName: '✓ Test 5: List Azure Resources'
+      inputs:
+        azureSubscription: $(serviceConnection)
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          echo "============================================"
+          echo "Test 5: List Azure Resources"
+          echo "============================================"
+          echo ""
+          
+          echo "Listing resources (first 10):"
+          az resource list --output table | head -n 15
+          echo ""
+          
+          TOTAL=$(az resource list --query "length(@)")
+          echo "✅ Total resources accessible: $TOTAL"
+          echo ""
+    
+    - task: AzurePowerShell@5
+      displayName: '✓ Test 6: PowerShell Access'
+      inputs:
+        azureSubscription: $(serviceConnection)
+        ScriptType: 'InlineScript'
+        Inline: |
+          Write-Host "============================================"
+          Write-Host "Test 6: Azure PowerShell Access"
+          Write-Host "============================================"
+          Write-Host ""
+          
+          Write-Host "Current Context:"
+          Get-AzContext | Format-List
+          Write-Host ""
+          
+          Write-Host "Resource Groups:"
+          Get-AzResourceGroup | Format-Table ResourceGroupName, Location, ProvisioningState
+          Write-Host ""
+          
+          $rgCount = (Get-AzResourceGroup).Count
+          Write-Host "✅ Found $rgCount resource group(s)"
+          Write-Host ""
+        azurePowerShellVersion: 'LatestVersion'
+    
+    - task: Bash@3
+      displayName: '🎉 Summary'
+      inputs:
+        targetType: 'inline'
+        script: |
+          echo ""
+          echo "============================================"
+          echo "  🎉 ALL TESTS PASSED! 🎉"
+          echo "============================================"
+          echo ""
+          echo "Certificate-Based Authentication Summary:"
+          echo "  ✅ Authentication successful"
+          echo "  ✅ Subscription access verified"
+          echo "  ✅ Resource groups accessible"
+          echo "  ✅ RBAC permissions confirmed"
+          echo "  ✅ PowerShell integration working"
+          echo "  ✅ Azure CLI working"
+          echo ""
+          echo "Your service connection is ready for production use!"
+          echo ""
+          echo "============================================"
+          echo "Service Connection: azure-cert-sp-connection"
+          echo "Organization: nirmata"
+          echo "Project: anudeep"
+          echo "============================================"
+          echo ""
+

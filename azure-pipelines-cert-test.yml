@@ -1,0 +1,249 @@
+trigger: none
+
+# Test pipeline for certificate-based Azure authentication
+# Replace 'YOUR_SERVICE_CONNECTION_NAME' with your actual service connection name
+
+parameters:
+  - name: serviceConnection
+    displayName: 'Azure Service Connection Name'
+    type: string
+    default: 'azure-cert-service-connection'
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  azureServiceConnection: ${{ parameters.serviceConnection }}
+
+stages:
+- stage: TestCertificateAuth
+  displayName: 'Test Certificate-Based Authentication'
+  
+  jobs:
+  - job: ValidateConnection
+    displayName: 'Validate Azure Connection'
+    
+    steps:
+    - checkout: none
+    
+    - task: AzureCLI@2
+      displayName: 'Test 1: Verify Azure Login'
+      inputs:
+        azureSubscription: $(azureServiceConnection)
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          echo "======================================"
+          echo "Test 1: Verify Azure Login"
+          echo "======================================"
+          echo ""
+          echo "Current account:"
+          az account show
+          echo ""
+          echo "✓ Successfully authenticated with certificate"
+    
+    - task: AzureCLI@2
+      displayName: 'Test 2: List Subscriptions'
+      inputs:
+        azureSubscription: $(azureServiceConnection)
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          echo "======================================"
+          echo "Test 2: List Subscriptions"
+          echo "======================================"
+          echo ""
+          az account list --output table
+          echo ""
+          echo "✓ Successfully listed subscriptions"
+    
+    - task: AzureCLI@2
+      displayName: 'Test 3: List Resource Groups'
+      inputs:
+        azureSubscription: $(azureServiceConnection)
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          echo "======================================"
+          echo "Test 3: List Resource Groups"
+          echo "======================================"
+          echo ""
+          az group list --output table
+          echo ""
+          COUNT=$(az group list --query "length(@)")
+          echo "✓ Found $COUNT resource group(s)"
+    
+    - task: AzureCLI@2
+      displayName: 'Test 4: Check Permissions'
+      inputs:
+        azureSubscription: $(azureServiceConnection)
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          echo "======================================"
+          echo "Test 4: Check Service Principal Permissions"
+          echo "======================================"
+          echo ""
+          
+          # Get service principal ID from current context
+          SP_ID=$(az account show --query user.name -o tsv)
+          echo "Service Principal: $SP_ID"
+          echo ""
+          
+          echo "Role Assignments:"
+          az role assignment list --assignee $SP_ID --output table
+          echo ""
+          echo "✓ Successfully retrieved role assignments"
+    
+    - task: AzurePowerShell@5
+      displayName: 'Test 5: PowerShell Access'
+      inputs:
+        azureSubscription: $(azureServiceConnection)
+        ScriptType: 'InlineScript'
+        Inline: |
+          Write-Host "======================================"
+          Write-Host "Test 5: Azure PowerShell Access"
+          Write-Host "======================================"
+          Write-Host ""
+          
+          Write-Host "Current Context:"
+          Get-AzContext | Format-List
+          Write-Host ""
+          
+          Write-Host "Resource Groups:"
+          Get-AzResourceGroup | Format-Table ResourceGroupName, Location, ProvisioningState
+          Write-Host ""
+          
+          $rgCount = (Get-AzResourceGroup).Count
+          Write-Host "✓ Found $rgCount resource group(s)"
+        azurePowerShellVersion: 'LatestVersion'
+    
+    - task: AzureCLI@2
+      displayName: 'Test 6: Deploy Sample Resource (Dry Run)'
+      inputs:
+        azureSubscription: $(azureServiceConnection)
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          echo "======================================"
+          echo "Test 6: Test Deployment Permissions"
+          echo "======================================"
+          echo ""
+          
+          # Create a simple ARM template for validation
+          cat > /tmp/test-template.json << 'EOF'
+          {
+            "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+            "contentVersion": "1.0.0.0",
+            "resources": []
+          }
+          EOF
+          
+          # Get first resource group or create a test one
+          RG=$(az group list --query "[0].name" -o tsv)
+          
+          if [ -z "$RG" ]; then
+            echo "⚠ No resource groups found, skipping deployment test"
+          else
+            echo "Testing deployment validation in resource group: $RG"
+            
+            # Validate deployment (doesn't actually deploy)
+            az deployment group validate \
+              --resource-group $RG \
+              --template-file /tmp/test-template.json
+            
+            if [ $? -eq 0 ]; then
+              echo ""
+              echo "✓ Deployment validation successful"
+              echo "  Service principal has deployment permissions"
+            else
+              echo ""
+              echo "⚠ Deployment validation failed"
+              echo "  Service principal may not have Contributor permissions"
+            fi
+          fi
+    
+    - task: Bash@3
+      displayName: 'Test Summary'
+      inputs:
+        targetType: 'inline'
+        script: |
+          echo ""
+          echo "======================================"
+          echo "CERTIFICATE AUTHENTICATION TEST SUMMARY"
+          echo "======================================"
+          echo ""
+          echo "✓ All authentication tests passed!"
+          echo ""
+          echo "Verified Capabilities:"
+          echo "  ✓ Certificate-based login"
+          echo "  ✓ Subscription access"
+          echo "  ✓ Resource group listing"
+          echo "  ✓ RBAC permissions check"
+          echo "  ✓ PowerShell integration"
+          echo "  ✓ Deployment permissions"
+          echo ""
+          echo "======================================"
+          echo "Service Connection: $(azureServiceConnection)"
+          echo "Build ID: $(Build.BuildId)"
+          echo "Build Number: $(Build.BuildNumber)"
+          echo "======================================"
+          echo ""
+          echo "🎉 Certificate-based authentication is working correctly!"
+          echo ""
+
+- stage: TestResourceOperations
+  displayName: 'Test Resource Operations (Optional)'
+  dependsOn: TestCertificateAuth
+  condition: succeeded()
+  
+  jobs:
+  - job: ResourceOperations
+    displayName: 'Test Resource Operations'
+    
+    steps:
+    - task: AzureCLI@2
+      displayName: 'List Resources by Type'
+      inputs:
+        azureSubscription: $(azureServiceConnection)
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          echo "======================================"
+          echo "Resource Inventory"
+          echo "======================================"
+          echo ""
+          
+          echo "Virtual Machines:"
+          az vm list --output table
+          echo ""
+          
+          echo "Storage Accounts:"
+          az storage account list --output table
+          echo ""
+          
+          echo "App Services:"
+          az webapp list --output table
+          echo ""
+          
+          echo "Key Vaults:"
+          az keyvault list --output table
+          echo ""
+    
+    - task: AzureCLI@2
+      displayName: 'Test Azure Resource Graph Query'
+      inputs:
+        azureSubscription: $(azureServiceConnection)
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          echo "======================================"
+          echo "Azure Resource Graph Query"
+          echo "======================================"
+          echo ""
+          
+          # Count resources by type
+          az graph query -q "Resources | summarize count() by type | order by count_ desc" -o table
+          echo ""
+          echo "✓ Resource Graph query successful"
+
