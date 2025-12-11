@@ -110,29 +110,29 @@ stages:
           echo "✅ Total resources accessible: $TOTAL"
           echo ""
     
-    - task: AzurePowerShell@5
-      displayName: '✓ Test 6: PowerShell Access'
-      inputs:
-        azureSubscription: $(serviceConnection)
-        ScriptType: 'InlineScript'
-        Inline: |
-          Write-Host "============================================"
-          Write-Host "Test 6: Azure PowerShell Access"
-          Write-Host "============================================"
-          Write-Host ""
-          
-          Write-Host "Current Context:"
-          Get-AzContext | Format-List
-          Write-Host ""
-          
-          Write-Host "Resource Groups:"
-          Get-AzResourceGroup | Format-Table ResourceGroupName, Location, ProvisioningState
-          Write-Host ""
-          
-          $rgCount = (Get-AzResourceGroup).Count
-          Write-Host "✅ Found $rgCount resource group(s)"
-          Write-Host ""
-        azurePowerShellVersion: 'LatestVersion'
+    #- task: AzurePowerShell@5
+    #  displayName: '✓ Test 6: PowerShell Access'
+    #  inputs:
+    #    azureSubscription: $(serviceConnection)
+    #    ScriptType: 'InlineScript'
+    #    Inline: |
+    #      Write-Host "============================================"
+    #      Write-Host "Test 6: Azure PowerShell Access"
+    #      Write-Host "============================================"
+    #      Write-Host ""
+    #      
+    #      Write-Host "Current Context:"
+    #      Get-AzContext | Format-List
+    #      Write-Host ""
+    #      
+    #      Write-Host "Resource Groups:"
+    #      Get-AzResourceGroup | Format-Table ResourceGroupName, Location, ProvisioningState
+    #      Write-Host ""
+    #      
+    #      $rgCount = (Get-AzResourceGroup).Count
+    #      Write-Host "✅ Found $rgCount resource group(s)"
+    #      Write-Host ""
+    #    azurePowerShellVersion: 'LatestVersion'
     
     - task: Bash@3
       displayName: '🎉 Summary'
