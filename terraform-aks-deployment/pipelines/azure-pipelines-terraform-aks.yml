@@ -1,0 +1,295 @@
+# Azure DevOps Pipeline for Terraform AKS Deployment
+# Uses Certificate-Based Authentication
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - terraform-aks-deployment/terraform/*
+
+pr:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - terraform-aks-deployment/terraform/*
+
+variables:
+  # Service Connection (Certificate-Based Auth)
+  azureServiceConnection: 'azure-cert-sp-connection'
+  
+  # Terraform Configuration
+  terraformVersion: '1.6.4'
+  workingDirectory: '$(System.DefaultWorkingDirectory)/terraform-aks-deployment/terraform'
+  
+  # Azure Configuration
+  azureSubscription: 'baf89069-e8f3-46f8-b74e-c146931ce7a4'
+  resourceGroup: 'rg-aks-novartis-dev'
+  
+  # Terraform Backend (Optional - configure if using remote state)
+  # backendResourceGroup: 'rg-terraform-state'
+  # backendStorageAccount: 'stterraformstate'
+  # backendContainer: 'tfstate'
+  # backendKey: 'aks.terraform.tfstate'
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+stages:
+- stage: ValidateAndPlan
+  displayName: 'Validate & Plan'
+  jobs:
+  - job: TerraformValidate
+    displayName: 'Terraform Validate'
+    steps:
+    
+    - task: TerraformInstaller@1
+      displayName: 'Install Terraform'
+      inputs:
+        terraformVersion: $(terraformVersion)
+    
+    - task: AzureCLI@2
+      displayName: 'Terraform Init'
+      inputs:
+        azureSubscription: $(azureServiceConnection)
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        workingDirectory: $(workingDirectory)
+        inlineScript: |
+          echo "Initializing Terraform..."
+          terraform init -input=false
+          
+          # Verify Terraform version
+          terraform version
+          
+    - task: AzureCLI@2
+      displayName: 'Terraform Validate'
+      inputs:
+        azureSubscription: $(azureServiceConnection)
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        workingDirectory: $(workingDirectory)
+        inlineScript: |
+          echo "Validating Terraform configuration..."
+          terraform validate
+          
+    - task: AzureCLI@2
+      displayName: 'Terraform Format Check'
+      inputs:
+        azureSubscription: $(azureServiceConnection)
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        workingDirectory: $(workingDirectory)
+        inlineScript: |
+          echo "Checking Terraform format..."
+          terraform fmt -check -recursive
+      continueOnError: true
+    
+    - task: AzureCLI@2
+      displayName: 'Terraform Plan'
+      inputs:
+        azureSubscription: $(azureServiceConnection)
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        workingDirectory: $(workingDirectory)
+        inlineScript: |
+          echo "Creating Terraform execution plan..."
+          terraform plan -input=false -out=tfplan
+          
+          echo "================================"
+          echo "Plan created successfully!"
+          echo "================================"
+    
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish Terraform Plan'
+      inputs:
+        targetPath: '$(workingDirectory)/tfplan'
+        artifact: 'terraform-plan'
+        publishLocation: 'pipeline'
+
+- stage: DeployAKS
+  displayName: 'Deploy AKS Cluster'
+  dependsOn: ValidateAndPlan
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  jobs:
+  - deployment: DeployTerraform
+    displayName: 'Deploy with Terraform'
+    environment: 'AKS-Development'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          
+          - checkout: self
+          
+          - task: TerraformInstaller@1
+            displayName: 'Install Terraform'
+            inputs:
+              terraformVersion: $(terraformVersion)
+          
+          - task: DownloadPipelineArtifact@2
+            displayName: 'Download Terraform Plan'
+            inputs:
+              buildType: 'current'
+              artifactName: 'terraform-plan'
+              targetPath: '$(workingDirectory)'
+          
+          - task: AzureCLI@2
+            displayName: 'Terraform Init (Deploy)'
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              workingDirectory: $(workingDirectory)
+              inlineScript: |
+                echo "Initializing Terraform for deployment..."
+                terraform init -input=false
+          
+          - task: AzureCLI@2
+            displayName: 'Terraform Apply'
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              workingDirectory: $(workingDirectory)
+              inlineScript: |
+                echo "=========================================="
+                echo "Deploying AKS Cluster with Terraform"
+                echo "=========================================="
+                echo ""
+                
+                # Apply the Terraform plan
+                terraform apply -input=false -auto-approve tfplan
+                
+                echo ""
+                echo "=========================================="
+                echo "AKS Cluster Deployed Successfully!"
+                echo "=========================================="
+                echo ""
+                
+                # Show outputs
+                echo "Cluster Information:"
+                terraform output -json
+          
+          - task: AzureCLI@2
+            displayName: 'Get AKS Credentials'
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              workingDirectory: $(workingDirectory)
+              inlineScript: |
+                echo "Getting AKS credentials..."
+                
+                CLUSTER_NAME=$(terraform output -raw aks_cluster_name)
+                RG_NAME=$(terraform output -raw resource_group_name)
+                
+                echo "Cluster: $CLUSTER_NAME"
+                echo "Resource Group: $RG_NAME"
+                
+                # Get credentials
+                az aks get-credentials \
+                  --resource-group $RG_NAME \
+                  --name $CLUSTER_NAME \
+                  --overwrite-existing
+                
+                echo ""
+                echo "Verifying connection..."
+                kubectl cluster-info
+                kubectl get nodes
+                
+                echo ""
+                echo "✅ AKS cluster is ready!"
+          
+          - task: AzureCLI@2
+            displayName: 'Verify AKS Deployment'
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                echo "=========================================="
+                echo "AKS Deployment Verification"
+                echo "=========================================="
+                echo ""
+                
+                CLUSTER_NAME=$(terraform output -raw aks_cluster_name)
+                RG_NAME=$(terraform output -raw resource_group_name)
+                
+                # Show cluster details
+                az aks show \
+                  --resource-group $RG_NAME \
+                  --name $CLUSTER_NAME \
+                  --output table
+                
+                echo ""
+                echo "Node Pools:"
+                az aks nodepool list \
+                  --resource-group $RG_NAME \
+                  --cluster-name $CLUSTER_NAME \
+                  --output table
+                
+                echo ""
+                echo "✅ Verification complete!"
+              workingDirectory: $(workingDirectory)
+
+- stage: PostDeployment
+  displayName: 'Post-Deployment Tasks'
+  dependsOn: DeployAKS
+  condition: succeeded()
+  jobs:
+  - job: Documentation
+    displayName: 'Generate Documentation'
+    steps:
+    
+    - checkout: self
+    
+    - task: TerraformInstaller@1
+      displayName: 'Install Terraform'
+      inputs:
+        terraformVersion: $(terraformVersion)
+    
+    - task: AzureCLI@2
+      displayName: 'Generate Cluster Documentation'
+      inputs:
+        azureSubscription: $(azureServiceConnection)
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        workingDirectory: $(workingDirectory)
+        inlineScript: |
+          echo "Initializing Terraform..."
+          terraform init -input=false
+          
+          echo "Generating cluster documentation..."
+          
+          # Create documentation file
+          cat > cluster-info.md << EOF
+          # AKS Cluster Deployment Information
+          
+          **Deployment Date:** $(date)
+          **Build Number:** $(Build.BuildNumber)
+          **Deployed By:** $(Build.RequestedFor)
+          
+          ## Cluster Details
+          
+          EOF
+          
+          # Append Terraform outputs
+          echo '```' >> cluster-info.md
+          terraform output >> cluster-info.md
+          echo '```' >> cluster-info.md
+          
+          echo ""
+          echo "Documentation generated!"
+          cat cluster-info.md
+    
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish Cluster Documentation'
+      inputs:
+        targetPath: '$(workingDirectory)/cluster-info.md'
+        artifact: 'cluster-documentation'
+        publishLocation: 'pipeline'
+
