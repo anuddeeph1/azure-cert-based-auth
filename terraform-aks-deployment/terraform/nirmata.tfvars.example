@@ -1,0 +1,25 @@
+#############################################
+# Nirmata Configuration Example
+# Copy this to terraform.tfvars and fill in your values
+#############################################
+
+# Enable Nirmata integration
+enable_nirmata = true
+
+# Nirmata API credentials
+nirmata_token        = "YOUR_NIRMATA_API_TOKEN_HERE"
+nirmata_url          = "https://nirmata.io"
+
+# Cluster registration in Nirmata
+nirmata_cluster_name = "aks-novartis-dev"
+nirmata_cluster_type = "default-add-ons"
+
+#############################################
+# Instructions:
+#############################################
+# 1. Get your Nirmata API token from: https://nirmata.io/settings/api-keys
+# 2. Copy this file content to terraform.tfvars
+# 3. Replace YOUR_NIRMATA_API_TOKEN_HERE with your actual token
+# 4. Run: terraform apply
+#############################################
+

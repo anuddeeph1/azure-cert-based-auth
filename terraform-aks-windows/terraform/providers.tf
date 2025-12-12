@@ -14,6 +14,14 @@ terraform {
       source  = "hashicorp/random"
       version = "~> 3.6"
     }
+    nirmata = {
+      source  = "nirmata/nirmata"
+      version = "~> 1.0"
+    }
+    null = {
+      source  = "hashicorp/null"
+      version = "~> 3.2"
+    }
   }
 
   # Backend configuration for remote state (optional)

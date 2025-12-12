@@ -1,0 +1,190 @@
+#############################################
+# Nirmata Integration - Windows Version
+# Use this if you encounter issues with the 
+# cross-platform version on Windows
+#############################################
+
+# Provider configuration for Nirmata
+provider "nirmata" {
+  token = var.nirmata_token
+  url   = var.nirmata_url
+}
+
+locals {
+  cluster_name                = module.eks.cluster_name
+  cluster_endpoint            = module.eks.cluster_endpoint
+  cluster_ca_certificate_data = module.eks.cluster_certificate_authority_data
+}
+
+# Register the EKS cluster with Nirmata
+resource "nirmata_cluster_registered" "eks-registered" {
+  name         = var.nirmata_cluster_name
+  cluster_type = var.nirmata_cluster_type
+  endpoint     = local.cluster_endpoint
+  
+  depends_on = [module.eks]
+}
+
+# Windows-specific controller deployment
+resource "null_resource" "apply_controllers" {
+  depends_on = [nirmata_cluster_registered.eks-registered]
+  
+  triggers = {
+    always_run = timestamp()
+  }
+
+  # Check for and fix kubeconfig if needed, then configure kubectl
+  provisioner "local-exec" {
+    command = <<EOT
+      # Ensure kubeconfig directory exists
+      $kubePath = "$env:USERPROFILE\.kube"
+      if (-Not (Test-Path $kubePath)) {
+        New-Item -ItemType Directory -Path $kubePath -Force
+      }
+      
+      # Validate existing kubeconfig or create a new one
+      $configPath = "$kubePath\config"
+      if (Test-Path $configPath) {
+        $fileContent = Get-Content $configPath -ErrorAction SilentlyContinue
+        if (-Not ($fileContent -match "apiVersion:")) {
+          Write-Host "Kubeconfig appears invalid, creating backup and new config"
+          $timestamp = Get-Date -Format "yyyyMMddHHmmss"
+          Move-Item -Path $configPath -Destination "$configPath.bak.$timestamp" -Force
+          New-Item -ItemType File -Path $configPath -Force
+        }
+      } else {
+        New-Item -ItemType File -Path $configPath -Force
+      }
+      
+      aws eks update-kubeconfig --region ${var.aws_region} --name ${local.cluster_name} --profile ${var.aws_profile}
+    EOT
+    interpreter = ["PowerShell", "-Command"]
+  }
+  
+  # List controller files for debugging
+  provisioner "local-exec" {
+    command = <<EOT
+      $folder = "${replace(nirmata_cluster_registered.eks-registered.controller_yamls_folder, "/", "\\")}"
+      Get-ChildItem -Path $folder | Out-File -FilePath controller_files.txt
+    EOT
+    interpreter = ["PowerShell", "-Command"]
+  }
+
+  # Apply namespace manifests (temp-01-*)
+  provisioner "local-exec" {
+    command = <<EOT
+      $folder = "${replace(nirmata_cluster_registered.eks-registered.controller_yamls_folder, "/", "\\")}"
+      $files = Get-ChildItem -Path $folder -Filter "temp-01-*"
+      foreach ($file in $files) {
+        Write-Host "Applying namespace file: $($file.FullName)"
+        kubectl apply -f $file.FullName
+      }
+    EOT
+    interpreter = ["PowerShell", "-Command"]
+  }
+
+  provisioner "local-exec" {
+    command = "Start-Sleep -Seconds 10"
+    interpreter = ["PowerShell", "-Command"]
+  }
+
+  # Apply service account manifests (temp-02-*)
+  provisioner "local-exec" {
+    command = <<EOT
+      $folder = "${replace(nirmata_cluster_registered.eks-registered.controller_yamls_folder, "/", "\\")}"
+      $files = Get-ChildItem -Path $folder -Filter "temp-02-*"
+      foreach ($file in $files) {
+        Write-Host "Applying service account file: $($file.FullName)"
+        kubectl apply -f $file.FullName
+      }
+    EOT
+    interpreter = ["PowerShell", "-Command"]
+  }
+
+  provisioner "local-exec" {
+    command = "Start-Sleep -Seconds 10"
+    interpreter = ["PowerShell", "-Command"]
+  }
+
+  # Apply CRD manifests (temp-03-*)
+  provisioner "local-exec" {
+    command = <<EOT
+      $folder = "${replace(nirmata_cluster_registered.eks-registered.controller_yamls_folder, "/", "\\")}"
+      $files = Get-ChildItem -Path $folder -Filter "temp-03-*"
+      foreach ($file in $files) {
+        Write-Host "Applying CRD file: $($file.FullName)"
+        kubectl apply -f $file.FullName
+      }
+    EOT
+    interpreter = ["PowerShell", "-Command"]
+  }
+
+  provisioner "local-exec" {
+    command = "Start-Sleep -Seconds 20"
+    interpreter = ["PowerShell", "-Command"]
+  }
+
+  # Apply deployment manifests (temp-04-*) - skip kyverno-operator
+  provisioner "local-exec" {
+    command = <<EOT
+      $folder = "${replace(nirmata_cluster_registered.eks-registered.controller_yamls_folder, "/", "\\")}"
+      $files = Get-ChildItem -Path $folder -Filter "temp-04-*"
+      foreach ($file in $files) {
+        $content = Get-Content $file.FullName -Raw
+        if ($content -match "kyverno-operator") {
+          Write-Host "Skipping kyverno-operator manifest: $($file.FullName)"
+          continue
+        }
+        Write-Host "Applying deployment file: $($file.FullName)"
+        kubectl apply -f $file.FullName
+      }
+    EOT
+    interpreter = ["PowerShell", "-Command"]
+  }
+
+  # Wait and delete kyverno-operator if exists
+  provisioner "local-exec" {
+    command = <<EOT
+      Write-Host "Waiting 120 seconds for controllers..."
+      Start-Sleep -Seconds 120
+      
+      Write-Host "Looking for kyverno-operator deployments..."
+      $deployments = kubectl get deployments --all-namespaces -o json | ConvertFrom-Json
+      foreach ($dep in $deployments.items) {
+        if ($dep.metadata.name -eq "kyverno-operator") {
+          Write-Host "Deleting kyverno-operator in namespace $($dep.metadata.namespace)"
+          kubectl delete deployment kyverno-operator -n $dep.metadata.namespace --ignore-not-found=true
+        }
+      }
+      Write-Host "kyverno-operator cleanup complete."
+    EOT
+    interpreter = ["PowerShell", "-Command"]
+  }
+}
+
+# Outputs
+output "controller_yamls_folder" {
+  description = "Folder containing Nirmata controller YAML files"
+  value       = nirmata_cluster_registered.eks-registered.controller_yamls_folder
+}
+
+output "controller_ns_yamls_count" {
+  description = "Number of namespace YAML files"
+  value       = nirmata_cluster_registered.eks-registered.controller_ns_yamls_count
+}
+
+output "controller_sa_yamls_count" {
+  description = "Number of service account YAML files"
+  value       = nirmata_cluster_registered.eks-registered.controller_sa_yamls_count
+}
+
+output "controller_crd_yamls_count" {
+  description = "Number of CRD YAML files"
+  value       = nirmata_cluster_registered.eks-registered.controller_crd_yamls_count
+}
+
+output "controller_deploy_yamls_count" {
+  description = "Number of deployment YAML files"
+  value       = nirmata_cluster_registered.eks-registered.controller_deploy_yamls_count
+}
+

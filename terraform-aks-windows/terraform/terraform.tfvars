@@ -67,3 +67,13 @@ tags = {
   OS          = "Windows"
 }
 
+# Enable Nirmata integration
+enable_nirmata = true
+
+# Nirmata API credentials
+nirmata_token        = "GU4XLFKtCP1w8v3R3rv30qD6PLEOR7dbtYtM2yck5AzTfJOGSnmxTH3X0DVeEF1xSyr8qgmtbCjw9ki8ZKMJOw=="
+nirmata_url          = "https://nirmata.io"
+
+# Cluster registration in Nirmata
+nirmata_cluster_name = "aks-novartis-dev"
+nirmata_cluster_type = "default-add-ons"

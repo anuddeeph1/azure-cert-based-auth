@@ -17,10 +17,14 @@ resource "azurerm_subnet" "aks_windows" {
   address_prefixes     = var.subnet_address_prefixes
 }
 
-# Use existing Log Analytics Workspace
-data "azurerm_log_analytics_workspace" "aks" {
-  name                = "log-aks-novartis-dev" # Existing Log Analytics
+# Create new Log Analytics Workspace for Windows cluster
+resource "azurerm_log_analytics_workspace" "aks_windows" {
+  name                = "log-${var.cluster_name}"
+  location            = data.azurerm_resource_group.aks.location
   resource_group_name = data.azurerm_resource_group.aks.name
+  sku                 = "PerGB2018"
+  retention_in_days   = 30
+  tags                = var.tags
 }
 
 # Random password for Windows admin
@@ -106,9 +110,9 @@ resource "azurerm_kubernetes_cluster" "aks" {
     }
   }
 
-  # Monitoring - use existing Log Analytics
+  # Monitoring - use Windows cluster Log Analytics
   oms_agent {
-    log_analytics_workspace_id = data.azurerm_log_analytics_workspace.aks.id
+    log_analytics_workspace_id = azurerm_log_analytics_workspace.aks_windows.id
   }
 
   # Azure Policy
