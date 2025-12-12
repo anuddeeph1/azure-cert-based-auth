@@ -72,8 +72,10 @@ output "vnet_id" {
 output "subnet_id" {
   #description = "ID of the AKS subnet"
   #value       = var.create_vnet ? azurerm_subnet.aks[0].id : null
-  description = "ID of the Windows AKS subnet"
-  value       = azurerm_subnet.aks_windows.id
+  #description = "ID of the Windows AKS subnet"
+  #value       = azurerm_subnet.aks_windows.id
+  description = "ID of the Windows AKS subnet (existing)"
+  value       = data.azurerm_subnet.aks_windows.id
 }
 
 output "aks_version" {
