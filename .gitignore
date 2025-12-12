@@ -1,0 +1,42 @@
+# Terraform files
+**/.terraform/
+**/tfplan
+**/tfplan.binary
+
+# Certificate files (sensitive)
+**/certs/*.pem
+**/certs/*.pfx
+**/certs/*.key
+**/certs/*.crt
+
+# Azure credentials
+**/azure-config.txt
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.so
+.env
+venv/
+env/
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Logs
+*.log
+
