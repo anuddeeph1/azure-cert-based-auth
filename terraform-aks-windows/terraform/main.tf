@@ -9,14 +9,12 @@ data "azurerm_virtual_network" "aks" {
   resource_group_name = data.azurerm_resource_group.aks.name
 }
 
-## Create new Subnet for Windows cluster in existing VNet
-#resource "azurerm_subnet" "aks_windows" {
-# Use existing Subnet for Windows cluster
-data "azurerm_subnet" "aks_windows" {
+# Create new Subnet for Windows cluster in existing VNet
+resource "azurerm_subnet" "aks_windows" {
   name                 = var.subnet_name
   resource_group_name  = data.azurerm_resource_group.aks.name
   virtual_network_name = data.azurerm_virtual_network.aks.name
-#  address_prefixes     = var.subnet_address_prefixes
+  address_prefixes     = var.subnet_address_prefixes
 }
 
 # Create new Log Analytics Workspace for Windows cluster
@@ -65,10 +63,7 @@ resource "azurerm_kubernetes_cluster" "aks" {
     type                = "VirtualMachineScaleSets"
 
     # Use the new Windows subnet in existing VNet
-   # vnet_subnet_id = azurerm_subnet.aks_windows.id
-
-    # Use the existing Windows subnet in existing VNet
-    vnet_subnet_id = data.azurerm_subnet.aks_windows.id
+    vnet_subnet_id = azurerm_subnet.aks_windows.id
 
     # Availability Zones
     zones = ["1", "2", "3"]
